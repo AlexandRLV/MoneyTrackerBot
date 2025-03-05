@@ -6,15 +6,49 @@ use std::path::Path;
 use log::{info, warn};
 use tokio::{signal, sync::Mutex};
 use chrono::{DateTime, Utc};
-use teloxide::{prelude::*,
-    types::{CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, MessageKind, UpdateKind, User},
-    utils::command::BotCommands};
+use teloxide::{
+    dispatching::{dialogue, dialogue::InMemStorage, UpdateHandler},
+    prelude::*,
+    types::{InlineKeyboardButton, InlineKeyboardMarkup},
+    utils::command::BotCommands,
+};
 use serde::{Serialize, Deserialize};
 use env_logger;
+use add_expenses::*;
+
+pub mod add_expenses;
+pub mod add_category;
+
+pub type MyDialogue = Dialogue<State, InMemStorage<State>>;
+pub type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+#[derive(Clone, Default)]
+pub enum State {
+    #[default]
+    Default,
+    AddExpense,
+    SelectCategory {
+        pending_expense: (String, f64),
+    },
+    ConfirmAddExpense {
+        pending_expense: (String, f64),
+        category: String,
+    },
+    AddCategory,
+    ConfirmAddCategory {
+        category: String,
+    },
+    DeleteCategory,
+    ConfirmDeleteCategory {
+        category: String,
+    },
+    CleanupExpenses,
+    ConfirmCleanupExpenses,
+}
 
 #[serde_with::serde_as]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-struct Expense {
+pub struct Expense {
     description: String,
     amount: f64,
     category: String,
@@ -23,21 +57,35 @@ struct Expense {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
-struct UserData {
+pub struct UserData {
     expenses: Vec<Expense>,
+    categories: Vec<String>,
     requested_clear: bool,
     pending_expense: Option<(String, f64)>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeUserData {
+    clearing_category: String,
+}
+
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Доступные команды")]
-enum Command {
+pub enum Command {
     #[command(description = "Показать это сообщение")]
     Help,
     #[command(description = "Показать приветственное сообщение")]
     Start,
-    #[command(description = "Очистить список трат")]
-    ClearExpenses,
+    #[command(description = "Добавить трату")]
+    AddExpense,
+    // #[command(description = "Удалить трату")]
+    // DeleteExpense,
+    #[command(description = "Добавить категорию")]
+    AddNewCategory,
+    #[command(description = "Удалить категорию")]
+    DeleteCategory,
+    #[command(description = "Удалить все траты")]
+    ClearAllExpenses,
     #[command(description = "Вывести список всех трат")]
     AllExpenses,
     #[command(description = "Вывести сумму трат")]
@@ -67,28 +115,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     info!("");
     info!("---------------------------");
 
-    let bot = Bot::from_env();
+    let token = String::from("8148320925:AAEh0-L5Wb29tPUAYcaNsZWQ5_MN5CxsF18");
+
+    let bot = Bot::new(token);
     let user_data = Arc::new(Mutex::new(load_user_data().unwrap_or_default()));
 
-    let handler = dptree::entry()
-    .branch(
-        Update::filter_message()
-                .filter_command::<Command>()
-                .endpoint(handle_command),
-    )
-    .branch(
-        Update::filter_message()
-            .inspect(|| info!("Received message"))
-            .endpoint(handle_message),
-    )
-    .branch(
-        Update::filter_callback_query()
-            .inspect(|| info!("Received callback"))
-            .endpoint(handle_callback),
-    );
-
     let _dispatch_task = tokio::spawn(async move {
-        Dispatcher::builder(bot, handler)
+        Dispatcher::builder(bot, schema())
+        .dependencies(dptree::deps![InMemStorage::<State>::new()])
         .dependencies(dptree::deps![user_data])
         .enable_ctrlc_handler()
         .build()
@@ -99,6 +133,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
     signal::ctrl_c().await?;
 
     Ok(())
+}
+
+fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {
+    let command_handler = teloxide::filter_command::<Command, _>()
+        .branch(dptree::case![Command::AddExpense].endpoint(start_add_expense))
+        .endpoint(handle_command);
+
+    let message_handler = Update::filter_message()
+        .branch(command_handler)
+        .branch(dptree::case![State::Default].endpoint(handle_message_expense))
+        .branch(dptree::case![State::AddExpense].endpoint(handle_message_expense))
+        .branch(dptree::case![State::SelectCategory { pending_expense }].endpoint(handle_message_on_select_category))
+        .branch(dptree::case![State::ConfirmAddExpense { pending_expense, category }].endpoint(handle_message_on_confirm_expense));
+
+    let callback_handler = Update::filter_callback_query()
+        .branch(dptree::case![State::SelectCategory { pending_expense }].endpoint(handle_callback_on_select_category))
+        .branch(dptree::case![State::ConfirmAddExpense { pending_expense, category }].endpoint(handle_callback_on_confirm_expense));
+    
+    dialogue::enter::<Update, InMemStorage<State>, State, _>()
+        .branch(message_handler)
+        .branch(callback_handler)
 }
 
 fn load_user_data() -> Result<HashMap<UserId, UserData>, Box<dyn Error>> {
@@ -114,14 +169,19 @@ fn load_user_data() -> Result<HashMap<UserId, UserData>, Box<dyn Error>> {
     Ok(user_data)
 }
 
-async fn save_user_data(user_data: &HashMap<UserId, UserData>) -> Result<(), Box<dyn Error>> {
+pub async fn save_user_data(user_data: &HashMap<UserId, UserData>) -> Result<(), Box<dyn Error>> {
     info!("Saving data...");
     let json = serde_json::to_string_pretty(&user_data)?;
     fs::write(DATA_FILE_PATH, json)?;
     Ok(())
 } 
 
-async fn handle_command(bot: Bot, msg: Message, cmd: Command, user_data: Arc<Mutex<HashMap<UserId, UserData>>>) -> ResponseResult<()> {
+async fn handle_command(
+    bot: Bot,
+    msg: Message,
+    cmd: Command,
+    user_data: Arc<Mutex<HashMap<UserId, UserData>>>
+) -> HandlerResult {
     let user_id = msg.from().unwrap().id;
 
     if let Some(text) = msg.text() {
@@ -140,8 +200,25 @@ async fn handle_command(bot: Bot, msg: Message, cmd: Command, user_data: Arc<Mut
                 "Привет! Я бот для учёта расходов. Пишите свои траты в формате: описание цена, например: продукты 15.5")
                 .await?;
         },
-        Command::ClearExpenses => {
-            clear_user_expenses(&bot, &msg, &user_data, user_id).await?;
+        Command::AddExpense => {
+            bot.send_message(msg.chat.id,
+                "Ошибка! Сюда управление не должно переходить")
+                .await?;
+        }
+        Command::AddNewCategory => {
+            bot.send_message(msg.chat.id,
+                "Не поддерживаем пока такую команду")
+                .await?;
+        }
+        Command::ClearAllExpenses => {
+            bot.send_message(msg.chat.id,
+                "Не поддерживаем пока такую команду")
+                .await?;
+        }
+        Command::DeleteCategory => {
+            bot.send_message(msg.chat.id,
+                "Не поддерживаем пока такую команду")
+                .await?;
         }
         Command::AllExpenses => {
             show_all_expenses(&bot, &msg, &user_data, user_id).await?;
@@ -203,24 +280,25 @@ async fn handle_callback(bot: Bot, query: CallbackQuery, user_data: Arc<Mutex<Ha
     let user_entry = data.entry(user_id).or_default();
 
     if let Some(category) = query.data {
-        if user_entry.requested_clear {
-            info!("Requested clearing data");
-            if  category == "ConfirmClear" {
-                info!("Callback is for clearing");
+        // if user_entry.requested_clear {
+        //     info!("Requested clearing data");
+        //     if  category == "ConfirmClear" {
+        //         info!("Callback is for clearing");
 
-                data.remove_entry(&user_id);
-                info!("Removed user entry from data");
+        //         data.remove_entry(&user_id);
+        //         info!("Removed user entry from data");
                 
-                if let Err(e) = save_user_data(&data).await {
-                    warn!("Save data error: {}", e);
-                }
+        //         if let Err(e) = save_user_data(&data).await {
+        //             warn!("Save data error: {}", e);
+        //         }
 
-                bot.send_message(chat_id, "Ваши траты были удалены").await?;
-            }
-            else {
-                bot.send_message(chat_id, "Отменяем удаление трат").await?;
-            }
-        } else if let Some((description, amount)) = user_entry.pending_expense.take() {
+        //         bot.send_message(chat_id, "Ваши траты были удалены").await?;
+        //     }
+        //     else {
+        //         bot.send_message(chat_id, "Отменяем удаление трат").await?;
+        //     }
+        // } else 
+        if let Some((description, amount)) = user_entry.pending_expense.take() {
             info!("Got pending expense {}, {}", description, amount);
 
             let expense = Expense {
