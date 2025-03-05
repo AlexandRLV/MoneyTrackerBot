@@ -1,0 +1,15 @@
+{
+  "6659133336": {
+    "expenses": [
+      {
+        "description": "молоко",
+        "amount": 2.0,
+        "category": "Продукты",
+        "date": "1741166234.4916203"
+      }
+    ],
+    "categories": [],
+    "requested_clear": false,
+    "pending_expense": null
+  }
+}

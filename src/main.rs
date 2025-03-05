@@ -122,8 +122,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let _dispatch_task = tokio::spawn(async move {
         Dispatcher::builder(bot, schema())
-        .dependencies(dptree::deps![InMemStorage::<State>::new()])
-        .dependencies(dptree::deps![user_data])
+        .dependencies(dptree::deps![InMemStorage::<State>::new(), user_data])
         .enable_ctrlc_handler()
         .build()
         .dispatch()

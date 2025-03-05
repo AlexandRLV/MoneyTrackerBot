@@ -1,9 +1,12 @@
-use crate::{add_category::category_is_valid, *};
+use crate::{add_category::*, *};
 
 pub async fn start_add_expense(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
+    info!("Got command /addexpense");
     bot.send_message(msg.chat.id,
         "Введите трату в формате: описание цена, например: продукты 15.5")
         .await?;
+
+    info!("Changing state to AddExpense");
     dialogue.update(State::AddExpense).await?;
     Ok(())
 }
@@ -26,6 +29,7 @@ pub async fn handle_message_expense(
             
             send_select_category(bot, msg.chat.id, user_entry, dialogue, description, amount).await?;
         } else {
+            info!("Expense didn't parsed");
             bot.send_message(msg.chat.id, "Пожалуйста, укажите трату в формате 'описание сумма', например: 'продукты 15.5'").await?;
         }
     }
@@ -40,6 +44,7 @@ pub async fn handle_message_on_select_category(
     pending_expense: (String, f64),
     user_data: Arc<Mutex<HashMap<UserId, UserData>>>
 ) -> HandlerResult {
+    info!("Got message with category");
     let user_id = msg.from().unwrap().id;
     let mut data = user_data.lock().await;
     let user_entry = data.entry(user_id).or_default();
@@ -47,12 +52,16 @@ pub async fn handle_message_on_select_category(
 
     if let Some(category) = msg.text() {
         let category = category.to_owned();
+        info!("Got category: {}", category);
         if category_is_valid(&category, user_entry) {
-            send_confirm_category(bot, msg.chat.id, description, amount, category, dialogue).await?;
+            info!("Category is valid!");
+            send_confirm_expense(bot, msg.chat.id, description, amount, category, dialogue).await?;
             return Ok(());
         }
+        info!("Category not valid!");
     }
 
+    info!("Go back to select category");
     send_select_category(bot, msg.chat.id, user_entry, dialogue, description, amount).await?;
     Ok(())
 }
@@ -64,6 +73,7 @@ pub async fn handle_callback_on_select_category(
     pending_expense: (String, f64),
     user_data: Arc<Mutex<HashMap<UserId, UserData>>>
 ) -> HandlerResult {
+    info!("Got callback when selecting category");
     let user_id = query.from.id;
     let chat_id = if let Some(message) = &query.message {
         message.chat().id
@@ -78,20 +88,26 @@ pub async fn handle_callback_on_select_category(
 
     bot.answer_callback_query(query.id).await?;
     if let Some(answer) = query.data {
+        info!("Got query answer: {}", answer);
         if category_is_valid(&answer, user_entry) {
-            send_confirm_category(bot, chat_id, description, amount, answer, dialogue).await?;
+            info!("Category is valid");
+            send_confirm_expense(bot, chat_id, description, amount, answer, dialogue).await?;
             return Ok(());
         } else if answer == "Back" {
+            info!("Got Back request");
             send_select_category(bot, chat_id, user_entry, dialogue, description, amount).await?;
             return Ok(());
         } else if answer == "Cancel" {
+            info!("Got Cancel request");
             send_back_to_default(bot, chat_id, dialogue).await?;
             return Ok(());
         }
-    } else {
-        send_select_category(bot, chat_id, user_entry, dialogue, description, amount).await?;
+
+        info!("Got unknown callback");
     }
 
+    info!("Go back to select category");
+    send_select_category(bot, chat_id, user_entry, dialogue, description, amount).await?;
     Ok(())
 }
 
@@ -102,9 +118,10 @@ pub async fn handle_message_on_confirm_expense(
     pending_expense: (String, f64),
     category: String
 ) -> HandlerResult {
+    info!("Got message on confirm expense, send confirm again");
     let (description, amount) = pending_expense;
     bot.send_message(msg.chat.id, "Пожалуйста, подтвердите или отмените добавление траты").await?;
-    send_confirm_category(bot, msg.chat.id, description, amount, category, dialogue).await?;
+    send_confirm_expense(bot, msg.chat.id, description, amount, category, dialogue).await?;
     Ok(())
 }
 
@@ -112,10 +129,10 @@ pub async fn handle_callback_on_confirm_expense(
     bot: Bot,
     query: CallbackQuery,
     dialogue: MyDialogue,
-    pending_expense: (String, f64),
-    category: String,
+    (pending_expense, category): ((String, f64), String),
     user_data: Arc<Mutex<HashMap<UserId, UserData>>>
 ) -> HandlerResult {
+    info!("Got callback on confirm expense");
     let user_id = query.from.id;
     let chat_id = if let Some(message) = &query.message {
         message.chat().id
@@ -130,7 +147,9 @@ pub async fn handle_callback_on_confirm_expense(
 
     bot.answer_callback_query(query.id).await?;
     if let Some(answer) = query.data {
+        info!("Got query data");
         if answer == "Confirm" {
+            info!("Got Confirm request");
             let expense = Expense {
                 description,
                 amount,
@@ -139,6 +158,10 @@ pub async fn handle_callback_on_confirm_expense(
             };
 
             user_entry.expenses.push(expense);
+            
+            if !user_entry.categories.contains(&category) {
+                user_entry.categories.push(category.clone());
+            }
             
             if let Err(e) = save_user_data(&data).await {
                 warn!("Save data error: {}", e);
@@ -151,14 +174,19 @@ pub async fn handle_callback_on_confirm_expense(
             dialogue.update(State::Default).await?;
             return Ok(());
         } else if answer == "Back" {
+            info!("Got Back request");
             send_select_category(bot, chat_id, user_entry, dialogue, description, amount).await?;
             return Ok(());
         } else if answer == "Cancel" {
+            info!("Got Cancel request");
             send_back_to_default(bot, chat_id, dialogue).await?;
             return Ok(());
         }
+
+        info!("Unknown callback");
     }
 
+    info!("Go back to select category");
     send_select_category(bot, chat_id, user_entry, dialogue, description, amount).await?;
     Ok(())
 }
@@ -171,9 +199,10 @@ async fn send_select_category(
     description: String,
     amount: f64
 ) -> HandlerResult {
+    info!("Sending select category");
+    let markup = create_category_keyboard(&user_entry.categories);
     if user_entry.categories.len() > 0 {
-        let markup = create_category_keyboard(&user_entry.categories);
-
+        info!("User has categories");
         bot.send_message(
             chat_id,
             format!("Вы ввели трату '{}' на сумму {:.2}. Выберите категорию из списка или введите новую:", description, amount)
@@ -181,6 +210,7 @@ async fn send_select_category(
         .reply_markup(markup)
         .await?;
     } else {
+        info!("User doesn't have any category");
         bot.send_message(
             chat_id,
             format!("Вы ввели трату '{}' на сумму {:.2}. Вы ещё не добавили ни одной категории, введите новую:", description, amount)
@@ -188,11 +218,12 @@ async fn send_select_category(
         .await?;
     }
 
+    info!("Changing state to SelectCategory");
     dialogue.update(State::SelectCategory { pending_expense: (description, amount) }).await?;
     Ok(())
 }
 
-async fn send_confirm_category(
+async fn send_confirm_expense(
     bot: Bot,
     chat_id: ChatId,
     description: String,
@@ -200,10 +231,12 @@ async fn send_confirm_category(
     category: String,
     dialogue: MyDialogue
 ) -> HandlerResult {
+    info!("Sending confirm expense");
     let mut keyboard: Vec<Vec<InlineKeyboardButton>> = Vec::new();
     let mut row: Vec<InlineKeyboardButton> = Vec::new();
-    row.push(InlineKeyboardButton::callback("Назад", "NO"));
-    row.push(InlineKeyboardButton::callback("Подтвердить", "YES"));
+    row.push(InlineKeyboardButton::callback("Отменить", "Cancel"));
+    row.push(InlineKeyboardButton::callback("Назад", "Back"));
+    row.push(InlineKeyboardButton::callback("Подтвердить", "Confirm"));
     keyboard.push(row);
 
     let markup = InlineKeyboardMarkup::new(keyboard);
@@ -214,12 +247,15 @@ async fn send_confirm_category(
     )
     .reply_markup(markup)
     .await?;
+
+    info!("Changing state to ConfirmAddExpense");
     dialogue.update(State::ConfirmAddExpense{ pending_expense: (description, amount), category: category.to_owned() }).await?;
     Ok(())
 }
 
 async fn send_back_to_default(bot: Bot, chat_id: ChatId, dialogue: MyDialogue) -> HandlerResult {
     bot.send_message(chat_id, "Добавление траты отменено").await?;
+    info!("Changing state to Default");
     dialogue.update(State::Default).await?;
     Ok(())
 }
@@ -240,9 +276,10 @@ fn parse_expense(text: &str) -> Option<(String, f64)> {
 }
 
 fn create_category_keyboard(categories: &Vec<String>) -> InlineKeyboardMarkup {
+    info!("Creating category keyboard");
     let mut keyboard: Vec<Vec<InlineKeyboardButton>> = Vec::new();
     let mut row: Vec<InlineKeyboardButton> = Vec::new();
-
+    
     for (i, category) in categories.iter().enumerate() {
         let button = InlineKeyboardButton::callback(category.to_string(), category.to_string());
 
@@ -253,6 +290,10 @@ fn create_category_keyboard(categories: &Vec<String>) -> InlineKeyboardMarkup {
             row = Vec::new();
         }
     }
+
+    row.push(InlineKeyboardButton::callback("Отменить", "Cancel"));
+    row.push(InlineKeyboardButton::callback("Назад", "Back"));
+    keyboard.push(row);
 
     InlineKeyboardMarkup::new(keyboard)
 }
