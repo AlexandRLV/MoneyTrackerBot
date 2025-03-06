@@ -76,13 +76,8 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(dptree::case![State::ConfirmDeleteCategory { category }].endpoint(handle_message_on_confirm_delete_category))
         .branch(dptree::case![State::ConfirmCleanupExpenses].endpoint(handle_message_on_confirm_cleanup_expenses));
 
-    let callback_handler = Update::filter_callback_query()
-        .branch(dptree::case![State::SelectCategory { pending_expense }].endpoint(handle_callback_on_select_category))
-        .branch(dptree::case![State::ConfirmAddExpense { pending_expense, category }].endpoint(handle_callback_on_confirm_expense));
-    
     dialogue::enter::<Update, InMemStorage<State>, State, _>()
         .branch(message_handler)
-        .branch(callback_handler)
 }
 
 fn load_user_data() -> Result<HashMap<UserId, UserData>, Box<dyn Error>> {
