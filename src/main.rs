@@ -126,8 +126,7 @@ pub async fn enter_default_state(bot: Bot, chat_id: ChatId, dialogue: MyDialogue
 
 async fn handle_command(
     bot: Bot,
-    msg: Message,
-    cmd: Command
+    msg: Message
 ) -> HandlerResult {
     if let Some(text) = msg.text() {
         info!("Received unparsed command: {}", text);
@@ -147,7 +146,7 @@ async fn handle_start_command(bot: Bot, msg: Message, dialogue: MyDialogue) -> H
     Ok(())
 }
 
-async fn handle_help_command(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
+async fn handle_help_command(bot: Bot, msg: Message) -> HandlerResult {
     bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
     Ok(())
 }
