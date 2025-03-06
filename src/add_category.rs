@@ -26,7 +26,7 @@ pub async fn handle_message_on_add_category(
 
     let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
-    let user_entry = get_user_entry(data, user_id);
+    let user_entry = get_user_entry(&mut data, user_id);
     if user_entry.categories.contains(&text) {
         bot.send_message(msg.chat.id,
             "Такая категория уже добавлена")
@@ -66,7 +66,7 @@ pub async fn handle_message_on_confirm_category(
     if text == "Да" {
         let user_id = msg.from.as_ref().unwrap().id;
         let mut data = user_data.lock().await;
-        let user_entry = get_user_entry(data, user_id);
+        let user_entry = get_user_entry(&mut data, user_id);
         if user_entry.categories.contains(&category) {
             bot.send_message(msg.chat.id,
                 "Такая категория уже добавлена")

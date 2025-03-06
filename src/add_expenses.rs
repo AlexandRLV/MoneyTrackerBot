@@ -25,7 +25,7 @@ pub async fn handle_message_expense(
 
             let user_id = msg.from.as_ref().unwrap().id;
             let mut data = user_data.lock().await;
-            let user_entry = get_user_entry(data, user_id);
+            let user_entry = get_user_entry(&mut data, user_id);
             
             send_select_category(bot, msg.chat.id, user_entry, dialogue, description, amount).await?;
             return Ok(());
@@ -61,7 +61,7 @@ pub async fn handle_message_on_select_category(
 
     let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
-    let user_entry = get_user_entry(data, user_id);
+    let user_entry = get_user_entry(&mut data, user_id);
     let (description, amount) = pending_expense;
 
     if let Ok(id) = text.parse::<usize>() {
@@ -112,7 +112,7 @@ pub async fn handle_message_on_confirm_expense(
 
     let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
-    let user_entry = get_user_entry(data, user_id);
+    let user_entry = get_user_entry(&mut data, user_id);
     let (description, amount) = pending_expense;
 
     if text == "Назад" {
@@ -163,27 +163,16 @@ async fn send_select_category(
     amount: f64
 ) -> HandlerResult {
     info!("Sending select category");
-    if user_entry.categories.len() == 0 {
-        user_entry.categories.push(DEFAULT_OTHER_CATEGORY.to_string());
-        // info!("User doesn't have any category");
-        // let keyboard = KeyboardMarkup::new(
-        //     vec![vec![KeyboardButton::new("Назад")]])
-        //     .resize_keyboard()
-        //     .one_time_keyboard();
-        
-        // bot.send_message(
-        //     chat_id,
-        //     format!("Вы ввели трату '{}' на сумму {:.2}. Вы ещё не добавили ни одной категории, введите новую:", description, amount))
-        //     .reply_markup(keyboard)
-        //     .await?;
-        // dialogue.update(State::SelectCategory { pending_expense: (description, amount) }).await?;
-        // return Ok(());
-    }
-
     let keyboard = KeyboardMarkup::new(
         vec![vec![KeyboardButton::new("Отменить"), KeyboardButton::new("Назад"), KeyboardButton::new("Да")]])
         .resize_keyboard()
         .one_time_keyboard();
+
+    if user_entry.categories.len() > MAX_ITEMS_IN_MESSAGE {
+        bot.send_message(chat_id,
+            format!("Показываем {} из {} ваших категорий", MAX_ITEMS_IN_MESSAGE, user_entry.categories.len()))
+            .await?;
+    }
 
     let mut message = String::from("Ваши категории:\n\n");
     for (i, category) in user_entry.categories.iter().take(MAX_ITEMS_IN_MESSAGE).enumerate() {
@@ -215,20 +204,16 @@ async fn send_confirm_expense(
     dialogue: MyDialogue
 ) -> HandlerResult {
     info!("Sending confirm expense");
-    let mut keyboard: Vec<Vec<InlineKeyboardButton>> = Vec::new();
-    let mut row: Vec<InlineKeyboardButton> = Vec::new();
-    row.push(InlineKeyboardButton::callback("Отменить", "Cancel"));
-    row.push(InlineKeyboardButton::callback("Назад", "Back"));
-    row.push(InlineKeyboardButton::callback("Подтвердить", "Confirm"));
-    keyboard.push(row);
-
-    let markup = InlineKeyboardMarkup::new(keyboard);
+    let keyboard = KeyboardMarkup::new(
+        vec![vec![KeyboardButton::new("Назад")]])
+        .resize_keyboard()
+        .one_time_keyboard();
 
     bot.send_message(
         chat_id,
         format!("Подтвердите добавление траты '{}' на сумму {:.2} в категорию {}", description, amount, category)
     )
-    .reply_markup(markup)
+    .reply_markup(keyboard)
     .await?;
 
     info!("Changing state to ConfirmAddExpense");

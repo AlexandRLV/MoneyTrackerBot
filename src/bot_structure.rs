@@ -48,10 +48,10 @@ pub struct UserData {
 #[derive(BotCommands, Clone)]
 #[command(rename_rule = "lowercase", description = "Доступные команды")]
 pub enum Command {
-    #[command(description = "Показать это сообщение")]
-    Help,
     #[command(description = "Показать приветственное сообщение")]
     Start,
+    #[command(description = "Показать это сообщение")]
+    Help,
     #[command(description = "Добавить трату")]
     AddExpense,
     // #[command(description = "Удалить трату")]

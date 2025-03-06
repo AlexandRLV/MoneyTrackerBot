@@ -4,7 +4,7 @@ pub async fn start_delete_category(bot: Bot, msg: Message, dialogue: MyDialogue,
     info!("Got command /deletecategory");
     let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
-    let user_entry = get_user_entry(data, user_id);
+    let user_entry = get_user_entry(&mut data, user_id);
     send_delete_category(bot, msg.chat.id, dialogue, user_entry).await?;
     Ok(())
 }
@@ -26,7 +26,7 @@ pub async fn handle_message_on_delete_category(
 
     let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
-    let user_entry = get_user_entry(data, user_id);
+    let user_entry = get_user_entry(&mut data, user_id);
 
     if let Ok(id) = text.parse::<usize>() {
         if id >= user_entry.categories.len() {
@@ -84,7 +84,7 @@ pub async fn handle_message_on_confirm_delete_category(
     if text == "Да" {
         let user_id = msg.from.as_ref().unwrap().id;
         let mut data = user_data.lock().await;
-        let user_entry = get_user_entry(data, user_id);
+        let user_entry = get_user_entry(&mut data, user_id);
         
         if let Some(pos) = user_entry.categories.iter().position(|c| c == &category) {
             user_entry.categories.remove(pos);
@@ -139,6 +139,12 @@ async fn send_delete_category(
         .resize_keyboard()
         .one_time_keyboard();
     
+    if user_entry.categories.len() > MAX_ITEMS_IN_MESSAGE {
+        bot.send_message(chat_id,
+            format!("Показываем {} из {} ваших категорий", MAX_ITEMS_IN_MESSAGE, user_entry.categories.len()))
+            .await?;
+    }
+
     let mut message = String::from("Ваши категории:\n\n");
     for (i, category) in user_entry.categories.iter().take(MAX_ITEMS_IN_MESSAGE).enumerate() {
         message.push_str(&format!(
