@@ -43,4 +43,11 @@ jobs:
           cd /home/rust-expenses-bot/
           rm -r ./project
           mkdir ./project
-          unzip stamptoken-project.zip -d ./project
+          rm -r ./build
+          mkdir ./build
+          unzip rust-money-tracker-bot.zip -d ./project
+          cargo build --release
+          cd target
+          cd release
+          mv ./ ../../../build/
+          sudo systemctl start rust-expenses-bot.service
