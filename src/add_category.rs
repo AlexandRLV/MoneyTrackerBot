@@ -1,5 +1,3 @@
-use teloxide::types::{KeyboardButton, ReplyMarkup};
-
 use crate::*;
 
 pub async fn start_add_category(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
@@ -26,7 +24,7 @@ pub async fn handle_message_on_add_category(
         return Ok(());
     }
 
-    let user_id = msg.from().unwrap().id;
+    let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
     let user_entry = data.entry(user_id).or_default();
     if user_entry.categories.contains(&text) {
@@ -66,7 +64,7 @@ pub async fn handle_message_on_confirm_category(
     }
 
     if text == "Да" {
-        let user_id = msg.from().unwrap().id;
+        let user_id = msg.from.as_ref().unwrap().id;
         let mut data = user_data.lock().await;
         let user_entry = data.entry(user_id).or_default();
         if user_entry.categories.contains(&category) {

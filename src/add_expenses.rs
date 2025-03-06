@@ -1,4 +1,4 @@
-use crate::{add_category::*, *};
+use crate::*;
 
 pub async fn start_add_expense(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
     info!("Got command /addexpense");
@@ -19,11 +19,11 @@ pub async fn handle_message_expense(
 ) -> HandlerResult {
     if let Some(text) = msg.text() {
         info!("Received message: {}", text);
-        let user_id = msg.from().unwrap().id;
 
         if let Some((description, amount)) = parse_expense(text) {
             info!("Parsed expense: {}, {}", description, amount);
 
+            let user_id = msg.from.unwrap().id;
             let mut data = user_data.lock().await;
             let user_entry = data.entry(user_id).or_default();
             
@@ -45,7 +45,7 @@ pub async fn handle_message_on_select_category(
     user_data: Arc<Mutex<HashMap<UserId, UserData>>>
 ) -> HandlerResult {
     info!("Got message with category");
-    let user_id = msg.from().unwrap().id;
+    let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
     let user_entry = data.entry(user_id).or_default();
     let (description, amount) = pending_expense;
