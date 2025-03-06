@@ -4,7 +4,7 @@ pub async fn start_delete_category(bot: Bot, msg: Message, dialogue: MyDialogue,
     info!("Got command /deletecategory");
     let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
-    let user_entry = data.entry(user_id).or_default();
+    let user_entry = get_user_entry(data, user_id);
     send_delete_category(bot, msg.chat.id, dialogue, user_entry).await?;
     Ok(())
 }
@@ -26,7 +26,7 @@ pub async fn handle_message_on_delete_category(
 
     let user_id = msg.from.as_ref().unwrap().id;
     let mut data = user_data.lock().await;
-    let user_entry = data.entry(user_id).or_default();
+    let user_entry = get_user_entry(data, user_id);
 
     if let Ok(id) = text.parse::<usize>() {
         if id >= user_entry.categories.len() {
@@ -36,12 +36,24 @@ pub async fn handle_message_on_delete_category(
         }
 
         let category = &user_entry.categories[id];
+        if category == DEFAULT_OTHER_CATEGORY {
+            bot.send_message(msg.chat.id, "Невозможно удалить категорию по умолчанию").await?;
+            send_delete_category(bot, msg.chat.id, dialogue, user_entry).await?;
+            return Ok(());
+        }
+
         send_confirm_delete_category(bot, msg.chat.id, dialogue, category.to_string()).await?;
         return Ok(());
     }
     
     if !user_entry.categories.contains(&text) {
         bot.send_message(msg.chat.id, "Такой категории не существует").await?;
+        send_delete_category(bot, msg.chat.id, dialogue, user_entry).await?;
+        return Ok(());
+    }
+
+    if text == DEFAULT_OTHER_CATEGORY {
+        bot.send_message(msg.chat.id, "Невозможно удалить категорию по умолчанию").await?;
         send_delete_category(bot, msg.chat.id, dialogue, user_entry).await?;
         return Ok(());
     }
@@ -72,18 +84,23 @@ pub async fn handle_message_on_confirm_delete_category(
     if text == "Да" {
         let user_id = msg.from.as_ref().unwrap().id;
         let mut data = user_data.lock().await;
-        let user_entry = data.entry(user_id).or_default();
+        let user_entry = get_user_entry(data, user_id);
         
         if let Some(pos) = user_entry.categories.iter().position(|c| c == &category) {
             user_entry.categories.remove(pos);
         }
 
+        let default_category = DEFAULT_OTHER_CATEGORY.to_string();
         let mut was_expenses = false;
         for expense in &mut user_entry.expenses {
             if expense.category == category {
                 was_expenses = true;
-                expense.category = DEFAULT_OTHER_CATEGORY.to_string();
+                expense.category = default_category.clone();
             }
+        }
+
+        if !user_entry.categories.contains(&default_category) {
+            user_entry.categories.push(default_category);
         }
 
         if let Err(e) = save_user_data(&data).await {
@@ -123,8 +140,7 @@ async fn send_delete_category(
         .one_time_keyboard();
     
     let mut message = String::from("Ваши категории:\n\n");
-
-    for (i, category) in user_entry.categories.iter().enumerate() {
+    for (i, category) in user_entry.categories.iter().take(MAX_ITEMS_IN_MESSAGE).enumerate() {
         message.push_str(&format!(
             "Id: {}, название: {}",
             i,

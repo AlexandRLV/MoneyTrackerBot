@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::MutexGuard};
 use std::error::Error;
 use std::sync::Arc;
 use std::fs;
@@ -27,8 +27,9 @@ pub mod add_category;
 pub mod delete_category;
 pub mod cleanup_expenses;
 
-const DEFAULT_OTHER_CATEGORY: &str = "Другое";
 const DATA_FILE_PATH: &str = "users_data.json";
+const DEFAULT_OTHER_CATEGORY: &str = "Другое";
+const MAX_ITEMS_IN_MESSAGE: usize = 50;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -98,7 +99,15 @@ pub async fn save_user_data(user_data: &HashMap<UserId, UserData>) -> Result<(),
     let json = serde_json::to_string_pretty(&user_data)?;
     fs::write(DATA_FILE_PATH, json)?;
     Ok(())
-} 
+}
+
+pub fn get_user_entry<'a>(user_data: &'a mut MutexGuard<'_, HashMap<UserId, UserData>>, user_id: UserId) -> &'a mut UserData {
+    let user_entry = user_data.entry(user_id).or_default();
+    if user_entry.categories.is_empty() {
+        user_entry.categories.push(DEFAULT_OTHER_CATEGORY.to_string());
+    }
+    return user_entry;
+}
 
 pub async fn enter_default_state(bot: Bot, chat_id: ChatId, dialogue: MyDialogue) -> HandlerResult {
     bot.send_message(chat_id,

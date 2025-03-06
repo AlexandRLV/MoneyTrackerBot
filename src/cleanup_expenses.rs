@@ -27,7 +27,7 @@ pub async fn handle_message_on_confirm_cleanup_expenses(
     if text == "Да" {
         let user_id = msg.from.as_ref().unwrap().id;
         let mut data = user_data.lock().await;
-        let user_entry = data.entry(user_id).or_default();
+        let user_entry = get_user_entry(data, user_id);
         
         user_entry.expenses.clear();
 
