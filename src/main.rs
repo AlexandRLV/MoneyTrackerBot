@@ -9,12 +9,13 @@ use chrono::{DateTime, Utc};
 use teloxide::{
     dispatching::{dialogue, dialogue::InMemStorage, UpdateHandler},
     prelude::*,
-    types::{InlineKeyboardButton, InlineKeyboardMarkup},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, KeyboardMarkup},
     utils::command::BotCommands,
 };
 use serde::{Serialize, Deserialize};
 use env_logger;
 use add_expenses::*;
+use add_category::*;
 
 pub mod add_expenses;
 pub mod add_category;
@@ -137,6 +138,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {
     let command_handler = teloxide::filter_command::<Command, _>()
         .branch(dptree::case![Command::AddExpense].endpoint(start_add_expense))
+        .branch(dptree::case![Command::AddNewCategory].endpoint(start_add_category))
         .endpoint(handle_command);
 
     let message_handler = Update::filter_message()
@@ -144,7 +146,9 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(dptree::case![State::Default].endpoint(handle_message_expense))
         .branch(dptree::case![State::AddExpense].endpoint(handle_message_expense))
         .branch(dptree::case![State::SelectCategory { pending_expense }].endpoint(handle_message_on_select_category))
-        .branch(dptree::case![State::ConfirmAddExpense { pending_expense, category }].endpoint(handle_message_on_confirm_expense));
+        .branch(dptree::case![State::ConfirmAddExpense { pending_expense, category }].endpoint(handle_message_on_confirm_expense))
+        .branch(dptree::case![State::AddCategory].endpoint(handle_message_on_add_category))
+        .branch(dptree::case![State::ConfirmAddCategory { category }].endpoint(handle_message_on_confirm_category));
 
     let callback_handler = Update::filter_callback_query()
         .branch(dptree::case![State::SelectCategory { pending_expense }].endpoint(handle_callback_on_select_category))
@@ -174,6 +178,14 @@ pub async fn save_user_data(user_data: &HashMap<UserId, UserData>) -> Result<(),
     fs::write(DATA_FILE_PATH, json)?;
     Ok(())
 } 
+
+pub async fn enter_default_state(bot: Bot, chat_id: ChatId, dialogue: MyDialogue) -> HandlerResult {
+    bot.send_message(chat_id,
+        "Привет! Я бот для учёта расходов. Начните с команды /addexpense, или напишите трату в формате: продукт цена (например, молоко 100)")
+        .await?;
+    dialogue.update(State::Default).await?;
+    Ok(())
+}
 
 async fn handle_command(
     bot: Bot,

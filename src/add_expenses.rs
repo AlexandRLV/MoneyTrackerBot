@@ -53,12 +53,8 @@ pub async fn handle_message_on_select_category(
     if let Some(category) = msg.text() {
         let category = category.to_owned();
         info!("Got category: {}", category);
-        if category_is_valid(&category, user_entry) {
-            info!("Category is valid!");
-            send_confirm_expense(bot, msg.chat.id, description, amount, category, dialogue).await?;
-            return Ok(());
-        }
-        info!("Category not valid!");
+        send_confirm_expense(bot, msg.chat.id, description, amount, category, dialogue).await?;
+        return Ok(());
     }
 
     info!("Go back to select category");
@@ -89,11 +85,7 @@ pub async fn handle_callback_on_select_category(
     bot.answer_callback_query(query.id).await?;
     if let Some(answer) = query.data {
         info!("Got query answer: {}", answer);
-        if category_is_valid(&answer, user_entry) {
-            info!("Category is valid");
-            send_confirm_expense(bot, chat_id, description, amount, answer, dialogue).await?;
-            return Ok(());
-        } else if answer == "Back" {
+        if answer == "Back" {
             info!("Got Back request");
             send_select_category(bot, chat_id, user_entry, dialogue, description, amount).await?;
             return Ok(());
@@ -101,9 +93,11 @@ pub async fn handle_callback_on_select_category(
             info!("Got Cancel request");
             send_back_to_default(bot, chat_id, dialogue).await?;
             return Ok(());
+        } else {
+            info!("Category is valid");
+            send_confirm_expense(bot, chat_id, description, amount, answer, dialogue).await?;
+            return Ok(());
         }
-
-        info!("Got unknown callback");
     }
 
     info!("Go back to select category");

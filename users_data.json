@@ -6,9 +6,17 @@
         "amount": 2.0,
         "category": "Продукты",
         "date": "1741166234.4916203"
+      },
+      {
+        "description": "Молоко",
+        "amount": 20.0,
+        "category": "Продукты",
+        "date": "1741183128.567932"
       }
     ],
-    "categories": [],
+    "categories": [
+      "Продукты"
+    ],
     "requested_clear": false,
     "pending_expense": null
   }
