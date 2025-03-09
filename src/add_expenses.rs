@@ -164,7 +164,7 @@ async fn send_select_category(
 ) -> HandlerResult {
     info!("Sending select category");
     let keyboard = KeyboardMarkup::new(
-        vec![vec![KeyboardButton::new("Отменить"), KeyboardButton::new("Назад"), KeyboardButton::new("Да")]])
+        vec![vec![KeyboardButton::new("Назад")]])
         .resize_keyboard()
         .one_time_keyboard();
 
@@ -205,7 +205,7 @@ async fn send_confirm_expense(
 ) -> HandlerResult {
     info!("Sending confirm expense");
     let keyboard = KeyboardMarkup::new(
-        vec![vec![KeyboardButton::new("Назад")]])
+        vec![vec![KeyboardButton::new("Отменить"), KeyboardButton::new("Назад"), KeyboardButton::new("Да")]])
         .resize_keyboard()
         .one_time_keyboard();
 
