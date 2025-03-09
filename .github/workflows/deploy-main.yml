@@ -44,4 +44,5 @@ jobs:
           rm -r ./project
           mkdir ./project
           unzip rust-money-tracker-bot.zip -d ./project
-          cargo build --release
+          ./build-script
+          ./update-service-script

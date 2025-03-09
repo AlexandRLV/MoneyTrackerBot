@@ -177,7 +177,7 @@ async fn send_select_category(
     let mut message = String::from("Ваши категории:\n\n");
     for (i, category) in user_entry.categories.iter().take(MAX_ITEMS_IN_MESSAGE).enumerate() {
         message.push_str(&format!(
-            "Id: {}, название: {}",
+            "Id: {}, название: {}\n",
             i,
             category));
     }

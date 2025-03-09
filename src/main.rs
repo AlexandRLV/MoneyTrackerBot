@@ -7,9 +7,9 @@ use log::{info, warn};
 use tokio::{signal, sync::Mutex, sync::MutexGuard};
 use chrono::{DateTime, Utc};
 use teloxide::{
-    dispatching::{dialogue, dialogue::InMemStorage, UpdateHandler},
+    dispatching::{dialogue::{self, InMemStorage}, UpdateHandler},
     prelude::*,
-    types::{KeyboardButton, KeyboardMarkup},
+    types::{KeyboardButton, KeyboardMarkup, ReplyMarkup},
     utils::command::BotCommands,
 };
 use serde::{Serialize, Deserialize};
@@ -117,8 +117,10 @@ pub fn get_user_entry<'a>(user_data: &'a mut MutexGuard<'_, HashMap<UserId, User
 }
 
 pub async fn enter_default_state(bot: Bot, chat_id: ChatId, dialogue: MyDialogue) -> HandlerResult {
+    let markup = ReplyMarkup::kb_remove();
     bot.send_message(chat_id,
-        "Привет! Я бот для учёта расходов. Начните с команды /addexpense, или напишите трату в формате: продукт цена (например, молоко 100)")
+        "Добавьте новую трату командой /addexpense, или напишите трату в формате: продукт цена (например, молоко 100)")
+        .reply_markup(markup)
         .await?;
     dialogue.update(State::Default).await?;
     Ok(())
@@ -142,6 +144,11 @@ async fn handle_command(
 }
 
 async fn handle_start_command(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
+    bot.send_message(msg.chat.id,
+        "Привет! Я бот для учёта расходов. Могу запоминать ваши траты
+         и выводить их в удобном для чтения виде.
+          Введите команду /help или нажмите меню, чтобы увидеть список доступных команд.")
+        .await?;
     enter_default_state(bot, msg.chat.id, dialogue).await?;
     Ok(())
 }

@@ -22,13 +22,14 @@ pub async fn show_all_expenses(
 
     let mut message = String::from("Ваши траты:\n\n");
 
-    for expense in user_entry.expenses.iter().take(MAX_ITEMS_IN_MESSAGE) {
+    for (id, expense) in user_entry.expenses.iter().enumerate().take(MAX_ITEMS_IN_MESSAGE) {
         message.push_str(&format!(
-            "Трата: {}, сумма: {:.2}, категория: {}, дата: {}\n",
-            expense.description,
-            expense.amount,
+            "{}. [{}] - **{}**: {}, на сумму: {:.2}\n",
+            id,
+            expense.date.format("%d.%m.%y %H:%M"),
             expense.category,
-            expense.date.format("%d.%m.%y %H:%M")
+            expense.description,
+            expense.amount
         ));
     }
     
